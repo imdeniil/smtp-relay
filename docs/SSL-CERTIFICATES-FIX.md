@@ -288,9 +288,12 @@ docker logs smtp-relay -f
 # Ручная проверка
 ./manage.sh check-ssl-symlinks
 
-# Добавить в cron для автоматической проверки (опционально)
-# Проверяет каждый час и исправляет при необходимости
-0 * * * * cd /root/smtp-relay && ./scripts/check-ssl-symlinks.sh || ./manage.sh fix-ssl-symlinks
+# Добавить в cron для автоматической проверки
+# Проверяет каждые 5 минут и исправляет при необходимости
+*/5 * * * * /root/rl/scripts/check-ssl-symlinks.sh > /dev/null 2>&1 || /root/rl/manage.sh fix-ssl-symlinks >> /var/log/ssl-symlinks-fix.log 2>&1
+
+# Просмотр логов автоисправления
+tail -f /var/log/ssl-symlinks-fix.log
 ```
 
 #### Включить в Бэкапы
