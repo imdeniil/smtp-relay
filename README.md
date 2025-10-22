@@ -112,9 +112,30 @@ chmod +x deploy.sh manage.sh
 - Минимальный след
 
 **Требования:**
-- Контейнер nginx-proxy запущен
-- Контейнер acme-companion запущен
-- Сеть "proxy" существует
+- Контейнер [nginx-proxy](https://github.com/nginx-proxy/nginx-proxy) запущен:
+  ```bash
+  docker run -d -p 80:80 -p 443:443 \
+    --name nginx-proxy \
+    --network proxy \
+    -v /var/run/docker.sock:/tmp/docker.sock:ro \
+    -v certs:/etc/nginx/certs:rw \
+    nginxproxy/nginx-proxy
+  ```
+- Контейнер [acme-companion](https://github.com/nginx-proxy/acme-companion) запущен:
+  ```bash
+  docker run -d \
+    --name nginx-proxy-acme \
+    --network proxy \
+    --volumes-from nginx-proxy \
+    -v /var/run/docker.sock:/var/run/docker.sock:ro \
+    -v acme:/etc/acme.sh \
+    -e "DEFAULT_EMAIL=your-email@example.com" \
+    nginxproxy/acme-companion
+  ```
+- Сеть "proxy" существует:
+  ```bash
+  docker network create proxy
+  ```
 
 **Команда:**
 ```bash
