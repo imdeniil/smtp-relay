@@ -75,6 +75,7 @@ ${YELLOW}TLS/Сертификаты:${NC}
   tls-info            Показать информацию о сертификате
   cert-renew          Принудительное обновление сертификата
   fix-ssl-symlinks    Исправить симлинки SSL сертификатов
+  check-ssl-symlinks  Проверить наличие SSL симлинков
 
 ${YELLOW}Устранение Неполадок:${NC}
   health              Полная проверка здоровья
@@ -802,6 +803,15 @@ main() {
             ;;
         fix-ssl-symlinks)
             fix_ssl_symlinks
+            ;;
+        check-ssl-symlinks)
+            # Запускаем скрипт проверки
+            if [ -f "./scripts/check-ssl-symlinks.sh" ]; then
+                ./scripts/check-ssl-symlinks.sh
+            else
+                echo -e "${RED}Ошибка: Скрипт проверки не найден${NC}"
+                exit 1
+            fi
             ;;
         health)
             health_check
