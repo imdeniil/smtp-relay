@@ -103,8 +103,9 @@ services:
       POSTCONF_smtpd_use_tls: ${ENABLE_STARTTLS:-yes}
       POSTCONF_smtpd_tls_security_level: 'may'
       POSTCONF_smtpd_tls_auth_only: 'no'
-      POSTCONF_smtpd_tls_cert_file: '/etc/nginx/certs/${RELAY_MYDOMAIN}.crt'
-      POSTCONF_smtpd_tls_key_file: '/etc/nginx/certs/${RELAY_MYDOMAIN}.key'
+      # Direct paths to acme-companion certificate structure (no symlinks needed!)
+      POSTCONF_smtpd_tls_cert_file: '/etc/nginx/certs/${RELAY_MYDOMAIN}/fullchain.pem'
+      POSTCONF_smtpd_tls_key_file: '/etc/nginx/certs/${RELAY_MYDOMAIN}/key.pem'
       POSTCONF_smtpd_tls_session_cache_database: 'btree:$${data_directory}/smtpd_scache'
       POSTCONF_smtpd_tls_loglevel: '1'
       POSTCONF_smtpd_tls_received_header: 'yes'

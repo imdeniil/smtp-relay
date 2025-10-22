@@ -75,16 +75,7 @@ chmod +x deploy.sh manage.sh
 - Ввод конфигурационных данных
 - Автоматическое развертывание и верификацию
 
-### 4. Установить Автоматический Мониторинг SSL (Рекомендуется)
-
-```bash
-# Установить cron задачу для автоматической проверки SSL симлинков каждые 5 минут
-./scripts/setup-cron.sh
-```
-
-Это защитит от проблем с TLS, автоматически восстанавливая симлинки при необходимости.
-
-### 5. Проверка
+### 4. Проверка
 
 ```bash
 ./manage.sh status
@@ -352,25 +343,22 @@ docker logs nginx-proxy-acme
 
 **Проблема:** STARTTLS не работает (TLS not available)
 
-Если вы видите ошибку `4.7.0 TLS not available due to local problem`, это означает отсутствие символических ссылок для SSL сертификатов.
+**РЕШЕНО СИСТЕМНО в версии 3.0+!** Postfix теперь настроен на прямые пути к сертификатам - симлинки не требуются!
 
-**Автоматическая защита активна:** Система автоматически проверяет и восстанавливает симлинки каждые 5 минут через cron.
+Структура (версия 3.0+):
+```
+/etc/nginx/certs/
+├── domain.com/
+│   ├── fullchain.pem  ← Postfix читает напрямую
+│   └── key.pem         ← Postfix читает напрямую
+```
 
+Если вы обновляетесь с версии <3.0, просто пересоздайте контейнер:
 ```bash
-# Проверить статус cron
-crontab -l
+docker compose -f configs/docker-compose.smtp-only.yml up -d --force-recreate smtp-relay
 
-# Просмотреть логи автоисправления
-tail -f /var/log/ssl-symlinks-fix.log
-
-# Ручная проверка симлинков
-./manage.sh check-ssl-symlinks
-
-# Автоматическое исправление (РЕКОМЕНДУЕТСЯ)
-./manage.sh fix-ssl-symlinks
-
-# Проверить сертификат
-./manage.sh tls-info
+# Проверить TLS
+./manage.sh tls-check
 
 # Проверить STARTTLS
 ./manage.sh tls-check

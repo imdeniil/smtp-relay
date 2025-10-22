@@ -371,28 +371,14 @@ wait_for_certificate() {
                 ls -lh "/var/lib/docker/volumes/${CERT_VOLUME}/_data/${RELAY_MYDOMAIN}/fullchain.pem" 2>/dev/null | awk '{print "  " $9 " (" $5 ")"}'
             fi
 
-            # Создание симлинков для сертификатов
+            # NOTE: В версии 3.0+ симлинки больше не требуются!
+            # Postfix настроен на прямые пути к файлам сертификатов:
+            # /etc/nginx/certs/${RELAY_MYDOMAIN}/fullchain.pem
+            # /etc/nginx/certs/${RELAY_MYDOMAIN}/key.pem
+            #
+            # Для старых установок (<3.0) используйте: ./manage.sh fix-ssl-symlinks
             echo ""
-            print_info "Создание символических ссылок для Postfix..."
-
-            cd "/var/lib/docker/volumes/${CERT_VOLUME}/_data" || return 1
-
-            # Удаление старых симлинков если существуют
-            rm -f "${RELAY_MYDOMAIN}.crt" 2>/dev/null
-            rm -f "${RELAY_MYDOMAIN}.key" 2>/dev/null
-            rm -f "${RELAY_MYDOMAIN}.chain.pem" 2>/dev/null
-            rm -f "${RELAY_MYDOMAIN}.dhparam.pem" 2>/dev/null
-
-            # Создание новых симлинков
-            ln -sf "./${RELAY_MYDOMAIN}/fullchain.pem" "${RELAY_MYDOMAIN}.crt"
-            ln -sf "./${RELAY_MYDOMAIN}/key.pem" "${RELAY_MYDOMAIN}.key"
-            ln -sf "./${RELAY_MYDOMAIN}/chain.pem" "${RELAY_MYDOMAIN}.chain.pem"
-
-            if [ -f "./dhparam.pem" ]; then
-                ln -sf "./dhparam.pem" "${RELAY_MYDOMAIN}.dhparam.pem"
-            fi
-
-            print_success "Симлинки созданы"
+            print_info "✓ Postfix настроен на прямые пути к сертификатам (симлинки не требуются)"
 
             return 0
         fi
