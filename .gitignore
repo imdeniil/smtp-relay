@@ -1,0 +1,66 @@
+# Environment and Configuration
+.env
+*.env
+!.env.example
+
+# Sensitive Data
+result.txt
+debug.txt
+*.log
+
+# Deprecated/removed files (for reference)
+FIXES.md
+START_HERE.md
+STRUCTURE.md
+
+# Backups
+backups/
+*.tar.gz
+*.zip
+
+# Docker volumes data
+data/
+
+# Temporary files
+*.tmp
+*.temp
+/tmp/
+.DS_Store
+*.swp
+*.swo
+*~
+
+# IDE
+.vscode/
+.idea/
+*.iml
+.project
+.classpath
+.settings/
+
+# OS
+Thumbs.db
+.Spotlight-V100
+.Trashes
+
+# Test artifacts
+test-output/
+coverage/
+
+# Local docker-compose overrides
+docker-compose.override.yml
+docker-compose.local.yml
+
+# Claude Code specific
+.claude/
+
+# SSH keys and certificates (if any)
+*.pem
+*.key
+*.crt
+!configs/*.conf
+
+# Local notes
+notes.md
+TODO.local.md
+scratch.md

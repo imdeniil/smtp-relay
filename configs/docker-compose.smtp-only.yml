@@ -1,0 +1,144 @@
+version: '3.8'
+
+################################################################################
+# SMTP-Only Deployment
+# Integrates with existing nginx-proxy and acme-companion
+#
+# Prerequisites:
+#   - nginx-proxy container must be running
+#   - acme-companion (nginx-proxy-acme) container must be running
+#   - Network "proxy" must exist
+################################################################################
+
+services:
+  # ============================================================================
+  # SMTP Relay Server
+  # Main SMTP relay with SASL authentication
+  # ============================================================================
+  smtp-relay:
+    image: turgon37/smtp-relay:latest
+    container_name: smtp-relay
+    restart: unless-stopped
+    environment:
+      # Basic configuration
+      RELAY_MYHOSTNAME: ${RELAY_MYHOSTNAME}
+      RELAY_MYDOMAIN: ${RELAY_MYDOMAIN}
+      RELAY_POSTMASTER: ${RELAY_POSTMASTER}
+
+      # Upstream SMTP configuration
+      RELAY_HOST: ${RELAY_HOST}
+      RELAY_LOGIN: ${RELAY_LOGIN}
+      RELAY_PASSWORD: ${RELAY_PASSWORD}
+      RELAY_USE_TLS: ${RELAY_USE_TLS:-no}
+      RELAY_TLS_VERIFY: 'none'
+
+      # Operating mode
+      RELAY_MODE: 'ALLOW_SASLAUTH_NODOMAIN'
+
+      # Allowed networks
+      RELAY_MYNETWORKS: '127.0.0.0/8 172.16.0.0/12 192.168.0.0/16 10.0.0.0/8'
+
+      # Postfix base configuration
+      POSTCONF_compatibility_level: '2'
+      POSTCONF_smtpd_sasl_auth_enable: 'yes'
+      POSTCONF_smtpd_sasl_security_options: 'noanonymous'
+      POSTCONF_broken_sasl_auth_clients: 'yes'
+      POSTCONF_smtpd_recipient_restrictions: 'permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination'
+
+      # STARTTLS configuration (conditional)
+      POSTCONF_smtpd_use_tls: ${ENABLE_STARTTLS:-yes}
+      POSTCONF_smtpd_tls_security_level: 'may'
+      POSTCONF_smtpd_tls_auth_only: 'no'
+      POSTCONF_smtpd_tls_cert_file: '/etc/nginx/certs/${RELAY_MYDOMAIN}.crt'
+      POSTCONF_smtpd_tls_key_file: '/etc/nginx/certs/${RELAY_MYDOMAIN}.key'
+      POSTCONF_smtpd_tls_session_cache_database: 'btree:$${data_directory}/smtpd_scache'
+      POSTCONF_smtpd_tls_loglevel: '1'
+      POSTCONF_smtpd_tls_received_header: 'yes'
+      POSTCONF_smtpd_tls_protocols: '!SSLv2,!SSLv3,!TLSv1,!TLSv1.1'
+      POSTCONF_smtpd_tls_ciphers: 'high'
+      POSTCONF_smtpd_tls_exclude_ciphers: 'aNULL,MD5'
+
+    ports:
+      - "${SMTP_PORT:-6025}:25"
+
+    volumes:
+      # SASL user database
+      - smtp-relay-data:/data
+      # Mail queue
+      - smtp-relay-queue:/var/spool/postfix
+      # SSL certificates from existing nginx-proxy
+      # Note: This volume must match the one used by nginx-proxy
+      - certs:/etc/nginx/certs:ro
+
+    networks:
+      - proxy
+
+    depends_on:
+      - smtp-relay-web
+
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "25"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 40s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ============================================================================
+  # Web Helper - For Let's Encrypt domain validation
+  # This container is needed to obtain the initial certificate
+  # After certificate is obtained, this can be stopped
+  # ============================================================================
+  smtp-relay-web:
+    image: nginx:alpine
+    container_name: smtp-relay-web
+    restart: unless-stopped
+    environment:
+      VIRTUAL_HOST: ${RELAY_MYDOMAIN}
+      LETSENCRYPT_HOST: ${RELAY_MYDOMAIN}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}
+      # Uncomment for testing with staging certificates
+      # LETSENCRYPT_TEST: true
+    volumes:
+      - ./nginx-default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - proxy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+    # This container can be stopped after certificate is obtained:
+    # docker stop smtp-relay-web
+
+# ==============================================================================
+# Volumes
+# ==============================================================================
+volumes:
+  # smtp-relay volumes
+  smtp-relay-data:
+    driver: local
+  smtp-relay-queue:
+    driver: local
+
+  # Certificate volume (must be external - shared with nginx-proxy)
+  certs:
+    external: true
+    # If your nginx-proxy uses a different volume name, update this:
+    # name: your_nginx_certs_volume_name
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+networks:
+  # External network (must already exist)
+  proxy:
+    external: true
+    name: proxy
+    # If your nginx-proxy uses a different network name, update this:
+    # name: your_network_name

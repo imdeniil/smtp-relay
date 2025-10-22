@@ -1,0 +1,204 @@
+version: '3.8'
+
+################################################################################
+# Full Stack Deployment
+# Includes: nginx-proxy + acme-companion + smtp-relay
+#
+# This configuration provides a complete setup with automatic SSL certificates
+# and reverse proxy capabilities.
+################################################################################
+
+services:
+  # ============================================================================
+  # NGINX Reverse Proxy
+  # Automatically configures itself based on container environment variables
+  # ============================================================================
+  nginx-proxy:
+    image: nginxproxy/nginx-proxy:latest
+    container_name: nginx-proxy
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - conf:/etc/nginx/conf.d
+      - vhost:/etc/nginx/vhost.d
+      - html:/usr/share/nginx/html
+      - certs:/etc/nginx/certs:ro
+      - dhparam:/etc/nginx/dhparam
+      - /var/run/docker.sock:/tmp/docker.sock:ro
+    networks:
+      - proxy
+    labels:
+      - "com.github.jrcs.letsencrypt_nginx_proxy_companion.nginx_proxy"
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # ACME Companion - Let's Encrypt Certificate Management
+  # Automatically obtains and renews SSL certificates
+  # ============================================================================
+  acme-companion:
+    image: nginxproxy/acme-companion:latest
+    container_name: nginx-proxy-acme
+    restart: unless-stopped
+    environment:
+      DEFAULT_EMAIL: ${LETSENCRYPT_EMAIL}
+      # Uncomment for testing with Let's Encrypt staging server
+      # ACME_CA_URI: https://acme-staging-v02.api.letsencrypt.org/directory
+    volumes_from:
+      - nginx-proxy
+    volumes:
+      - certs:/etc/nginx/certs:rw
+      - acme:/etc/acme.sh
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+    networks:
+      - proxy
+    depends_on:
+      - nginx-proxy
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "3"
+
+  # ============================================================================
+  # SMTP Relay Server
+  # Main SMTP relay with SASL authentication
+  # ============================================================================
+  smtp-relay:
+    image: turgon37/smtp-relay:latest
+    container_name: smtp-relay
+    restart: unless-stopped
+    environment:
+      # Basic configuration
+      RELAY_MYHOSTNAME: ${RELAY_MYHOSTNAME}
+      RELAY_MYDOMAIN: ${RELAY_MYDOMAIN}
+      RELAY_POSTMASTER: ${RELAY_POSTMASTER}
+
+      # Upstream SMTP configuration
+      RELAY_HOST: ${RELAY_HOST}
+      RELAY_LOGIN: ${RELAY_LOGIN}
+      RELAY_PASSWORD: ${RELAY_PASSWORD}
+      RELAY_USE_TLS: ${RELAY_USE_TLS:-no}
+      RELAY_TLS_VERIFY: 'none'
+
+      # Operating mode
+      RELAY_MODE: 'ALLOW_SASLAUTH_NODOMAIN'
+
+      # Allowed networks
+      RELAY_MYNETWORKS: '127.0.0.0/8 172.16.0.0/12 192.168.0.0/16 10.0.0.0/8'
+
+      # Postfix base configuration
+      POSTCONF_compatibility_level: '2'
+      POSTCONF_smtpd_sasl_auth_enable: 'yes'
+      POSTCONF_smtpd_sasl_security_options: 'noanonymous'
+      POSTCONF_broken_sasl_auth_clients: 'yes'
+      POSTCONF_smtpd_recipient_restrictions: 'permit_sasl_authenticated,permit_mynetworks,reject_unauth_destination'
+
+      # STARTTLS configuration (conditional)
+      POSTCONF_smtpd_use_tls: ${ENABLE_STARTTLS:-yes}
+      POSTCONF_smtpd_tls_security_level: 'may'
+      POSTCONF_smtpd_tls_auth_only: 'no'
+      POSTCONF_smtpd_tls_cert_file: '/etc/nginx/certs/${RELAY_MYDOMAIN}.crt'
+      POSTCONF_smtpd_tls_key_file: '/etc/nginx/certs/${RELAY_MYDOMAIN}.key'
+      POSTCONF_smtpd_tls_session_cache_database: 'btree:$${data_directory}/smtpd_scache'
+      POSTCONF_smtpd_tls_loglevel: '1'
+      POSTCONF_smtpd_tls_received_header: 'yes'
+      POSTCONF_smtpd_tls_protocols: '!SSLv2,!SSLv3,!TLSv1,!TLSv1.1'
+      POSTCONF_smtpd_tls_ciphers: 'high'
+      POSTCONF_smtpd_tls_exclude_ciphers: 'aNULL,MD5'
+
+    ports:
+      - "${SMTP_PORT:-6025}:25"
+
+    volumes:
+      # SASL user database
+      - smtp-relay-data:/data
+      # Mail queue
+      - smtp-relay-queue:/var/spool/postfix
+      # SSL certificates from nginx-proxy
+      - certs:/etc/nginx/certs:ro
+
+    networks:
+      - proxy
+
+    depends_on:
+      - nginx-proxy
+      - acme-companion
+      - smtp-relay-web
+
+    healthcheck:
+      test: ["CMD", "nc", "-z", "localhost", "25"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 60s
+
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "10m"
+        max-file: "5"
+
+  # ============================================================================
+  # Web Helper - For Let's Encrypt domain validation
+  # This container is needed to obtain the initial certificate
+  # ============================================================================
+  smtp-relay-web:
+    image: nginx:alpine
+    container_name: smtp-relay-web
+    restart: unless-stopped
+    environment:
+      VIRTUAL_HOST: ${RELAY_MYDOMAIN}
+      LETSENCRYPT_HOST: ${RELAY_MYDOMAIN}
+      LETSENCRYPT_EMAIL: ${LETSENCRYPT_EMAIL}
+      # Uncomment for testing
+      # LETSENCRYPT_TEST: true
+    volumes:
+      - ./nginx-default.conf:/etc/nginx/conf.d/default.conf:ro
+    networks:
+      - proxy
+    depends_on:
+      - nginx-proxy
+      - acme-companion
+    logging:
+      driver: "json-file"
+      options:
+        max-size: "5m"
+        max-file: "2"
+
+# ==============================================================================
+# Volumes
+# ==============================================================================
+volumes:
+  # nginx-proxy volumes
+  conf:
+    driver: local
+  vhost:
+    driver: local
+  html:
+    driver: local
+  certs:
+    driver: local
+  dhparam:
+    driver: local
+  acme:
+    driver: local
+
+  # smtp-relay volumes
+  smtp-relay-data:
+    driver: local
+  smtp-relay-queue:
+    driver: local
+
+# ==============================================================================
+# Networks
+# ==============================================================================
+networks:
+  proxy:
+    driver: bridge
+    name: proxy
